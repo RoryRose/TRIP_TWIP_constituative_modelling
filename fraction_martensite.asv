@@ -1,0 +1,92 @@
+function [f_mart,consts,gof2]=fraction_martensite(consts,exp_dat,x,user_dat,settings)
+
+% extract data
+e=user_dat.e;
+n=consts.austenite(strcmp(consts.Constant,'n'));
+m=consts.austenite(strcmp(consts.Constant,'m'));
+f_mart=user_dat.f_mart;
+o=settings.f_a2_opt;
+%find the first datapoint for austenite fraction (opt = 3)
+F_gamma=@(x)fit_gamma(user_dat,exp_dat,x,3,[]);
+if ~exist("o")
+    o=1;%set deafult
+end
+if o == 1
+    %f_o_gamma=consts.austenite(strcmp(consts.Constant,'F0'));
+    
+    
+    %calculate the predicted martenste fraction based on the model variables
+    %for this strain
+    %b_prime=b.*((F_gamma.*f_o_gamma).^n);
+    %b_prime=b;
+    inside=@(a,x)(1-exp(-a.*x)).^(n.*m);
+    F_mart=@(a,b,x)F_gamma(x).*(1-exp(-b.*inside(a,x)));
+    if isnan(consts.austenite(strcmp(consts.Constant,'b_prime')))|...
+            isnan(consts.austenite(strcmp(consts.Constant,'a')))
+
+        fo = fitoptions('Method','NonlinearLeastSquares',...
+                   'StartPoint',[1,1]);
+        ft=fittype(F_mart,...
+            'options',fo);
+        %fit to the data
+        [fitconst,gof2]=fit(e,user_dat.f_mart,ft,fo);
+        
+        %put values fitted into the constants structure for later
+        consts.austenite(strcmp(consts.Constant,'a'))=fitconst.a;
+        consts.austenite(strcmp(consts.Constant,'b_prime'))=fitconst.b;
+    else
+        gof2=NaN;
+    end
+    f_mart=F_mart(consts.austenite(strcmp(consts.Constant,'a')),consts.austenite(strcmp(consts.Constant,'b_prime')),x);
+    
+elseif o == 2
+    %option 2 - do linear interp so use the individual sample points and
+    %set a and b
+    try
+        f_mart=interp1(e,f_mart,x);
+    catch %if tha doesn't work we take the mean datapoints 
+        F_mart=mean([exp_dat.Martensite_lower,exp_dat.Martensite_upper],2)./100;
+        e=exp_dat.FC_Tstrain;
+        f_mart=interp1(e,F_mart,x);
+    end
+    if isnan(consts.austenite(strcmp(consts.Constant,'b_prime')))|...
+            isnan(consts.austenite(strcmp(consts.Constant,'a')))
+        %put values fitted into the constants structure for later
+        consts.austenite(strcmp(consts.Constant,'a'))=settings.deafult_alpha;
+        consts.austenite(strcmp(consts.Constant,'b_prime'))=settings.deafult_beta;
+        gof2=NaN;
+    else
+        gof2=NaN;
+    end
+elseif o == 3
+    F_mart=@(a,b,x)(1-exp_dat.Ferrite_fraction(1)./100).*(1-exp(-a.*(x.^b)));
+    %F_mart=@(a,b,x)(1-exp(-a.*(x.^b)));
+    % Fit to the avrami equation - BUT place variables into the martensite
+    % table column so it doesn't interfere with the twin fitting parameters
+    % here a = k, b= n [kinetic parameter] 
+    if isnan(consts.martensite(strcmp(consts.Constant,'b_prime')))|...
+            isnan(consts.martensite(strcmp(consts.Constant,'a')))
+
+        fo = fitoptions('Method','NonlinearLeastSquares',...
+                   'StartPoint',[1,1],'Lower',[0,0]);
+        ft=fittype(F_mart,...
+            'options',fo);
+        %fit to the data
+        [fitconst,gof2]=fit(e,user_dat.f_mart,ft,fo);
+        
+        %put values fitted into the constants structure for later
+        consts.martensite(strcmp(consts.Constant,'a'))=fitconst.a;
+        consts.martensite(strcmp(consts.Constant,'b_prime'))=fitconst.b;
+    else
+        gof2=NaN;
+    end
+    f_mart=F_mart(consts.martensite(strcmp(consts.Constant,'a')),consts.martensite(strcmp(consts.Constant,'b_prime')),x);
+    if isnan(consts.austenite(strcmp(consts.Constant,'b_prime')))|...
+            isnan(consts.austenite(strcmp(consts.Constant,'a')))
+        %put values fitted into the constants structure for later
+        consts.austenite(strcmp(consts.Constant,'a'))=settings.deafult_alpha;
+        consts.austenite(strcmp(consts.Constant,'b_prime'))=settings.deafult_beta;
+        gof2=NaN;
+    end
+    
+end
